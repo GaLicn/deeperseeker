@@ -6,7 +6,6 @@ deeperseeker.db
 .omo/
 
 # --- local/editor/tooling (never commit) ---
-.env
 .idea/
 .vscode/
 .pytest_cache/
