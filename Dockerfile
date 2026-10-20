@@ -5,26 +5,27 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 
+ARG DEBIAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian
+ARG DEBIAN_SECURITY_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian-security
 
-# ca-certificates 必须显式安装：下面的源端点改为 HTTPS，而 --no-install-recommends
-# 不会随 curl 带入该包，缺失时 apt 无法完成 TLS 握手。
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-
-# 本机代理转发 deb.debian.org 时会出现 500/502 与连接重置，导致
-# `playwright install --with-deps` 拉不齐 Debian 包并以退出码 100 失败。此处
-# 提高 apt 的重试次数与超时，并把源端点由 HTTP 改为 HTTPS，规避代理对明文
-# HTTP 的干扰。该配置对本文件后续所有 apt 调用（含 Playwright 的内部调用）生效。
-RUN echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries
-RUN echo 'Acquire::http::Timeout "30";' >> /etc/apt/apt.conf.d/80-retries
-RUN echo 'Acquire::https::Timeout "30";' >> /etc/apt/apt.conf.d/80-retries
-RUN for f in /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list; do \
-      if [ -f "$f" ]; then sed -i 's|http://deb.debian.org|https://deb.debian.org|g' "$f" || true; fi; \
+# 同时覆盖 Debian 主源与安全源，兼容 deb822 和传统 sources.list。
+RUN set -eux; \
+    printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' > /etc/apt/apt.conf.d/80-retries; \
+    rm -f /etc/apt/apt.conf.d/docker-clean; \
+    for source in /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list; do \
+      if [ -f "$source" ]; then \
+        sed -i \
+          -e "s|https\?://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" \
+          -e "s|https\?://security.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" \
+          -e "s|https\?://deb.debian.org/debian|${DEBIAN_MIRROR}|g" \
+          "$source"; \
+      fi; \
     done
 
+# 缓存索引和 DEB，重建时复用下载；缓存目录不会写入最终镜像。
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
 
 # requirements.txt is not copied: the install step below uses the self-contained
 # waf-backup lock, which already pins every base dependency.
@@ -37,19 +38,13 @@ COPY pyproject.toml uv.lock requirements-waf-backup.txt ./
 # instead of the plain lock, then fetch the matching browser build.
 RUN uv pip install --system --no-cache -r requirements-waf-backup.txt
 
-# Headless Chromium is required at runtime: the DeepSeek login risk check only
-# accepts the device ID published by the web client's fingerprint SDK. The
-# browser install pulls dozens of Debian packages through the same unstable
-# proxy as the base image, so it is retried; if the mirrors stay unreachable it
-# is skipped with a warning, because only the optional Playwright fallback needs
-# Chromium while the primary Android-header login path does not.
-RUN ok=0; for attempt in 1 2 3; do \
-      if playwright install --with-deps chromium; then ok=1; break; fi; \
-      echo "playwright install attempt $attempt failed; retrying in 10s"; \
-      sleep 10; \
-    done; \
-    if [ "$ok" = "1" ]; then echo "chromium ready"; \
-    else echo "WARN: chromium unavailable (mirror unreachable); Playwright fallback disabled"; fi
+# 分开安装系统依赖和浏览器，浏览器下载重试不会重复更新 APT 索引。
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    playwright install-deps chromium
+
+# 使用 Playwright 自带的下载重试；失败直接报错，避免镜像缺少登录所需浏览器。
+RUN playwright install chromium
 
 COPY . .
 
