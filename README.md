@@ -75,14 +75,14 @@ Note: `docker-compose.yml` binds to `127.0.0.1:4000` only (local access) — cha
 
 #### 国内网络构建
 
-Compose 默认使用清华 Debian 主源和安全源，不配置代理。APT 索引和 DEB 使用 BuildKit 缓存；Chromium 系统依赖与浏览器分层安装，避免浏览器下载失败后重复处理系统依赖。首次构建仍需下载，后续构建请保留缓存，不要使用 `--no-cache`。
+Compose 默认使用清华 Debian 主源和安全源，以及 npmmirror 的 Playwright 浏览器镜像，不配置代理。APT 索引和 DEB 使用 BuildKit 缓存；Chromium 系统依赖与浏览器分层安装，避免浏览器下载失败后重复处理系统依赖。首次构建仍需下载，后续构建请保留缓存，不要使用 `--no-cache`。
 
 ```bash
 docker compose --progress plain build
 docker compose up -d --no-build
 ```
 
-可通过 `BUILD_DEBIAN_MIRROR` 和 `BUILD_DEBIAN_SECURITY_MIRROR` 环境变量或 `.env` 覆盖镜像地址。Chromium 本体仍从 Playwright 官方 CDN 下载；下载失败时构建报错，不会生成缺少浏览器的镜像。
+可通过 `BUILD_DEBIAN_MIRROR`、`BUILD_DEBIAN_SECURITY_MIRROR` 和 `BUILD_PLAYWRIGHT_DOWNLOAD_HOST` 环境变量或 `.env` 覆盖镜像地址。浏览器镜像同时提供 Chromium、Headless Shell 和 FFmpeg；若需切回官方 CDN，将 `BUILD_PLAYWRIGHT_DOWNLOAD_HOST` 设为 `https://cdn.playwright.dev`。下载失败时构建报错，不会生成缺少浏览器的镜像。
 
 Dashboard: `http://localhost:4000/`
 

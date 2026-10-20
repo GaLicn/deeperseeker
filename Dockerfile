@@ -43,8 +43,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     playwright install-deps chromium
 
-# 使用 Playwright 自带的下载重试；失败直接报错，避免镜像缺少登录所需浏览器。
-RUN playwright install chromium
+# 仅在浏览器下载层设置镜像，切换地址不会使前面的 APT、Python 依赖缓存失效。
+ARG PLAYWRIGHT_DOWNLOAD_HOST=https://registry.npmmirror.com/-/binary/playwright
+RUN PLAYWRIGHT_DOWNLOAD_HOST="${PLAYWRIGHT_DOWNLOAD_HOST}" playwright install chromium
 
 COPY . .
 

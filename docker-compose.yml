@@ -3,9 +3,10 @@ services:
     build:
       context: .
       args:
-        # 仅用于构建时下载 Debian 包，不影响容器运行时网络。
+        # 仅用于构建时下载依赖与浏览器，不影响容器运行时网络。
         DEBIAN_MIRROR: ${BUILD_DEBIAN_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/debian}
         DEBIAN_SECURITY_MIRROR: ${BUILD_DEBIAN_SECURITY_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/debian-security}
+        PLAYWRIGHT_DOWNLOAD_HOST: ${BUILD_PLAYWRIGHT_DOWNLOAD_HOST:-https://registry.npmmirror.com/-/binary/playwright}
     container_name: deeperseeker
     ports:
       - "0.0.0.0:4000:4000"
