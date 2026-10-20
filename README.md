@@ -2,6 +2,7 @@
 I am busy with exams so new PR and Issues might be slow to resolve or merge (but i would merge them or resolve the issue as I get time in between) so expect some inconvenience.
 
 # DeeperSeeker
+[![CI Pipeline](https://github.com/AmanCode22/deeperseeker/actions/workflows/tests.yaml/badge.svg)](https://github.com/AmanCode22/deeperseeker/actions/workflows/tests.yaml)
 
 DeepSeek website reverse-proxy server with FastAPI, supporting OpenAI & Anthropic API standards.
 
@@ -21,14 +22,32 @@ A kind request: do not spam the server, respect DeepSeek's limits, and use it fo
 
 ## Quickstart
 
-### Local Python
+### Local Python[UV, Recommended]
+Needs uv first
+
+for linux/macos
 ```bash
-python3 -m venv deeperseeker_env
-source deeperseeker_env/bin/activate
-pip install -r requirements.txt
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+or on windows
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+Then,
+```bash
+uv sync
+source .venv/bin/activate # or activate.fish or activate.zsh
 cp .env.example .env
+uv run deeperseeker
+```
+### Local Python[Non UV, Not usually recommended]
+```bash
+python3 -m venv .venv
+pip install -r requirements.txt 
+cp .env.example .env 
 python3 app.py
 ```
+
 
 > **Note:** Thanks to PR https://github.com/AmanCode22/deeperseeker/pull/16 by [@alan7383](https://github.com/alan7383), Playwright and Chromium are deprecated and kept as backup (DeepSeek does not enforce AWS WAF on requests using Android client headers). You no longer need to run `playwright install chromium` or `xvfb-run` unless reverting to the backup cookie mechanism. And it now saves ram also and is much stable than cookie harvesting.
 
@@ -82,6 +101,9 @@ cp .env.example .env
 | `DEEPSEEKER_PER_TOOL_RESULT_TOKENS` | Per-result tool-output cap (so one giant output can't eat the budget) | `2000` |
 | `DEEPSEEKER_PROMPT_LANGUAGE` | Reasoning/answer language; `auto` follows the latest user turn, `zh-CN` forces Simplified Chinese | `auto` |
 | `DEEPSEEKER_TOKEN_CHECK_INTERVAL` | Token pool health-check interval in seconds | `300` |
+| `DEEPSEEKER_DEVICE_ID` | Explicit device ID for account login; skips browser harvesting | unset |
+| `DEEPSEEKER_DEVICE_ID_PATH` | Where the harvested device ID is cached | next to the database |
+| `DEEPSEEKER_DEVICE_ID_TIMEOUT` | Seconds to wait for the fingerprint SDK to publish a device ID | `60` |
 
 ## Auth Token Setup
 
@@ -90,6 +112,8 @@ cp .env.example .env
 3. Paste raw token string into Dashboard (`/dashboard`). Close incognito window.
 
 The Chinese dashboard also supports adding an account directly with its DeepSeek email and password. The bridge calls `/api/v0/users/login`, stores only the returned bearer token, and does not persist the submitted password.
+
+The login endpoint validates the device ID produced by the web client's fingerprint SDK, so a random value is rejected with `biz_code=11 / RISK_DEVICE_DETECTED`. Before the first login the bridge therefore opens the sign-in page in headless Chromium, reads the SDK's device ID, and caches it next to the database. Later logins reuse the cached ID, which keeps one stable device identity for the whole deployment. Set `DEEPSEEKER_DEVICE_ID` to bypass harvesting with a value you copied from a real browser session. The dashboard stays usable either way: a rejected login only reports the error, and the cached ID survives container recreation as long as the data volume is kept.
 
 ## API Endpoints & Usage
 

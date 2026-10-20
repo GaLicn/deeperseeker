@@ -46,12 +46,14 @@ def test_native_sse_payload_and_done_are_parsed():
     original_post = functions.post_with_failover
 
     async def fake_post(*args, **kwargs):
-        return FakeResponse([
-            b"event: message\n",
-            b'data: {"p":"response/fragments","v":[{"type":"RESPONSE","content":"hello"}]}\n',
-            b"\n",
-            b"data: [DONE]\n\n",
-        ])
+        return FakeResponse(
+            [
+                b"event: message\n",
+                b'data: {"p":"response/fragments","v":[{"type":"RESPONSE","content":"hello"}]}\n',
+                b"\n",
+                b"data: [DONE]\n\n",
+            ]
+        )
 
     functions.post_with_failover = fake_post
     try:
@@ -75,7 +77,9 @@ def test_openai_delta_envelope_is_parsed():
 
     async def fake_post(*args, **kwargs):
         event = {"choices": [{"delta": {"content": "hello"}}]}
-        return FakeResponse([f"data: {json.dumps(event)}\n\n".encode(), b"data: [DONE]\n\n"])
+        return FakeResponse(
+            [f"data: {json.dumps(event)}\n\n".encode(), b"data: [DONE]\n\n"]
+        )
 
     async def fake_pow(*args, **kwargs):
         return None

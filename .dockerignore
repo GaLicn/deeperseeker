@@ -24,3 +24,6 @@ _tps_denom_out.txt
 DISM
 sfc
 ...
+.python-version
+.pytest_cache/
+.ruff_cache

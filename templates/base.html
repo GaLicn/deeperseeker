@@ -3,19 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light">
+    <meta name="darkreader-lock">
     <title>{% block title %}DeeperSeeker 控制台{% endblock %}</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v={{ static_version }}">
 </head>
 <body>
-    <nav>
-        <a href="/">控制台</a>
-        <span class="sep">|</span>
-        <a href="/logout">退出登录</a>
-        <span class="sep">|</span>
-        <span class="brand">DeeperSeeker</span>
-    </nav>
-    <main>
-        {% block content %}{% endblock %}
-    </main>
+{% block layout %}
+<header class="topbar">
+    <div class="topbar-inner">
+        <a class="brand" href="/">
+            <span class="brand-mark">DS</span>
+            <span>DeeperSeeker</span>
+        </a>
+        <nav class="topnav">
+            <a href="/">控制台</a>
+            <a href="/stats">使用统计</a>
+            <a href="/logout" class="danger">退出登录</a>
+        </nav>
+    </div>
+</header>
+<main class="page">
+    {% block content %}{% endblock %}
+</main>
+{% endblock %}
 </body>
 </html>

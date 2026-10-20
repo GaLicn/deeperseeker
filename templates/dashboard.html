@@ -1,135 +1,197 @@
 {% extends "base.html" %}
-{% block title %}控制台 - DeeperSeeker{% endblock %}
+{% block title %}控制台 · DeeperSeeker{% endblock %}
 {% block content %}
-<h1>DeeperSeeker 控制台</h1>
-
-{% if account_error %}<p class="error">{{ account_error }}</p>{% endif %}
-{% if account_message %}<p class="success">{{ account_message }}</p>{% endif %}
-
-<section>
-    <h2>添加 DeepSeek 账号</h2>
-    <p class="hint">输入账号密码后，系统调用 DeepSeek 登录接口，成功后只保存返回的 Token，不保存密码。</p>
-    <form method="post" action="/accounts/add">
-        <input type="text" name="alias" placeholder="别名（可选）" style="width:180px">
-        <input type="email" name="email" placeholder="邮箱" required style="width:260px">
-        <input type="password" name="password" placeholder="密码" required style="width:220px" autocomplete="new-password">
-        <button type="submit">登录并加入号池</button>
-    </form>
-</section>
-
-<section>
-    <h2>账号列表（{{ accounts|length }}）</h2>
-    {% if accounts %}
-    <table>
-        <thead>
-            <tr><th>编号</th><th>邮箱</th><th>别名</th><th>状态</th><th>最近登录</th><th>操作</th></tr>
-        </thead>
-        <tbody>
-        {% for account in accounts %}
-            <tr>
-                <td>{{ account['id'] }}</td>
-                <td>{{ account['email'] }}</td>
-                <td>{{ account['alias'] or '—' }}</td>
-                <td><span class="status {% if account['status'] == 'ACTIVE' %}ok{% elif account['status'] == 'CHECK_ERROR' %}warn{% else %}err{% endif %}">
-                    {% if account['status'] == 'ACTIVE' %}有效{% elif account['status'] == 'INVALID' %}已失效{% elif account['status'] == 'RATE_LIMITED' %}被限流{% else %}检查失败{% endif %}
-                </span></td>
-                <td>{{ account['last_login_at'] or '未登录' }}</td>
-                <td><form method="post" action="/accounts/{{ account['id'] }}/delete" style="display:inline" onsubmit="return confirm('确定删除这个账号及其 Token 吗？')">
-                    <button type="submit" class="btn-sm btn-danger">删除</button>
-                </form></td>
-            </tr>
-        {% endfor %}
-        </tbody>
-    </table>
-    {% else %}
-    <p>还没有通过账号登录添加账号。</p>
-    {% endif %}
-</section>
-
-<section>
-    <h2>添加 DeepSeek 账号 Token</h2>
-    <div class="steps">
-        <p><strong>获取步骤：</strong></p>
-        <ol>
-            <li>打开浏览器无痕/隐私窗口</li>
-            <li>访问 <a href="https://chat.deepseek.com" target="_blank">chat.deepseek.com</a> 并登录</li>
-            <li>打开开发者工具（F12）→ Console，粘贴：</li>
-        </ol>
-        <code>JSON.parse(localStorage.getItem("userToken")).value</code>
-        <ol start="4">
-            <li>复制 Token 并粘贴到下面的输入框</li>
-            <li><strong>去掉首尾引号</strong>，只保留原始 Token</li>
-            <li><strong>关闭无痕窗口</strong>以保留登录状态</li>
-        </ol>
+<div class="page-head">
+    <div>
+        <h1>控制台</h1>
+        <p class="page-sub">管理 DeepSeek 账号与 Token 号池</p>
     </div>
-    <div class="warning">
-        如果在浏览器中退出 DeepSeek，该 Token 将失效。
-    </div>
-    <form method="post" action="/tokens/add">
-        <input type="text" name="alias" placeholder="别名（可选，例如：个人、工作）" style="width:220px">
-        <input type="text" name="auth_token" placeholder="粘贴 Token（不要带引号）" style="width:400px">
-        <button type="submit">添加 Token</button>
-    </form>
-</section>
+    <span class="pill">{{ accounts|length }} 个账号 · {{ tokens|length }} 个 Token</span>
+</div>
 
-<section>
-    <div class="section-heading">
-        <h2>Token 号池（{{ tokens|length }}）</h2>
-        <button type="button" id="check-all" class="btn-secondary">立即检查全部</button>
-    </div>
-    <p class="hint">系统每 {{ (check_interval // 60) }} 分钟自动检查一次。检查只调用认证探测接口，不发送模型消息。</p>
-    <p id="check-message" class="hint" aria-live="polite">
-        {% if token_check_state.last_run_at %}上次检查：{{ token_check_state.last_run_at }}{% else %}尚未执行检查{% endif %}
-    </p>
-    {% if tokens %}
-    <table>
-        <thead>
-            <tr>
-                <th>编号</th>
-                <th>别名</th>
-                <th>Token</th>
-                <th>状态</th>
-                <th>最近检查</th>
-                <th>操作</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for tok in tokens %}
-            <tr>
-                <td>{{ tok['id'] }}</td>
-                <td>{{ tok['alias'] or '—' }}</td>
-                <td><code>{{ tok['token'][:12] }}…{{ tok['token'][-4:] }}</code></td>
-                <td>
-                    <span class="status {% if tok['status'] == 'ACTIVE' %}ok{% elif tok['status'] in ('RATE_LIMITED', 'CHECK_ERROR') %}warn{% else %}err{% endif %}">
-                        {% if tok['status'] == 'ACTIVE' %}有效{% elif tok['status'] == 'RATE_LIMITED' %}被限流{% elif tok['status'] == 'INVALID' %}已失效{% elif tok['status'] == 'CHECK_ERROR' %}检查失败{% else %}{{ tok['status'] }}{% endif %}
-                    </span>
-                </td>
-                <td>
-                    {% if tok['last_checked_at'] %}{{ tok['last_checked_at'] }}{% else %}未检查{% endif %}
-                    {% if tok['last_check_error'] %}<span class="check-error" title="{{ tok['last_check_error'] }}">⚠</span>{% endif %}
-                </td>
-                <td>
-                    <button type="button" class="btn-sm check-one" data-token-id="{{ tok['id'] }}">检查</button>
-                    <form method="post" action="/tokens/{{ tok['id'] }}/delete" style="display:inline"
-                          onsubmit="return confirm('确定删除这个 Token 吗？')">
-                        <button type="submit" class="btn-sm btn-danger">删除</button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% else %}
-    <p>号池中还没有 Token。</p>
-    {% endif %}
-</section>
+{% if account_error %}<div class="alert alert-error">{{ account_error }}</div>{% endif %}
+{% if account_message %}<div class="alert alert-success">{{ account_message }}</div>{% endif %}
 
-<section>
-    <h2>接口信息</h2>
-    <p>OpenAI 兼容接口：<code>http://localhost:4000/v1</code></p>
-    <p>Anthropic 兼容接口：<code>http://localhost:4000</code></p>
-    <p>默认模型：<code>v4.1flash</code></p>
-</section>
+<div class="layout">
+    <div class="col-main">
+        <section class="card">
+            <div class="card-head">
+                <h2>账号列表 <span class="badge">{{ accounts|length }}</span></h2>
+            </div>
+            {% if accounts %}
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>编号</th>
+                            <th>邮箱</th>
+                            <th>别名</th>
+                            <th>状态</th>
+                            <th>最近登录</th>
+                            <th class="ta-right">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for account in accounts %}
+                        <tr>
+                            <td class="mono muted">{{ account['id'] }}</td>
+                            <td>{{ account['email'] }}</td>
+                            <td>{{ account['alias'] or '—' }}</td>
+                            <td>
+                                <span class="status {% if account['status'] == 'ACTIVE' %}ok{% elif account['status'] == 'CHECK_ERROR' %}warn{% else %}err{% endif %}">
+                                    {% if account['status'] == 'ACTIVE' %}有效{% elif account['status'] == 'INVALID' %}已失效{% elif account['status'] == 'RATE_LIMITED' %}被限流{% else %}检查失败{% endif %}
+                                </span>
+                            </td>
+                            <td class="muted nowrap">{{ account['last_login_at'] or '未登录' }}</td>
+                            <td class="ta-right nowrap">
+                                <form method="post" action="/accounts/{{ account['id'] }}/delete" class="inline-form"
+                                      onsubmit="return confirm('确定删除这个账号及其 Token 吗？')">
+                                    <button type="submit" class="btn-sm btn-danger">删除</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty">还没有通过账号登录添加账号。</div>
+            {% endif %}
+        </section>
+
+        <section class="card">
+            <div class="card-head">
+                <h2>Token 号池 <span class="badge">{{ tokens|length }}</span></h2>
+                <button type="button" id="check-all" class="btn-sm btn-secondary">立即检查全部</button>
+            </div>
+            <div class="card-note">
+                <p>系统每 {{ (check_interval // 60) }} 分钟自动检查一次，检查只调用认证探测接口，不发送模型消息。</p>
+                <p id="check-message" aria-live="polite">
+                    {% if token_check_state.last_run_at %}上次检查：{{ token_check_state.last_run_at }}{% else %}尚未执行检查{% endif %}
+                </p>
+            </div>
+            {% if tokens %}
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>编号</th>
+                            <th>别名</th>
+                            <th>Token</th>
+                            <th>状态</th>
+                            <th>最近检查</th>
+                            <th class="ta-right">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for tok in tokens %}
+                        <tr>
+                            <td class="mono muted">{{ tok['id'] }}</td>
+                            <td>{{ tok['alias'] or '—' }}</td>
+                            <td><code class="nowrap">{{ tok['token'][:12] }}…{{ tok['token'][-4:] }}</code></td>
+                            <td>
+                                <span class="status {% if tok['status'] == 'ACTIVE' %}ok{% elif tok['status'] in ('RATE_LIMITED', 'CHECK_ERROR') %}warn{% else %}err{% endif %}">
+                                    {% if tok['status'] == 'ACTIVE' %}有效{% elif tok['status'] == 'RATE_LIMITED' %}被限流{% elif tok['status'] == 'INVALID' %}已失效{% elif tok['status'] == 'CHECK_ERROR' %}检查失败{% else %}{{ tok['status'] }}{% endif %}
+                                </span>
+                            </td>
+                            <td class="muted nowrap">
+                                {% if tok['last_checked_at'] %}{{ tok['last_checked_at'] }}{% else %}未检查{% endif %}
+                                {% if tok['last_check_error'] %}<span class="check-error" title="{{ tok['last_check_error'] }}">⚠</span>{% endif %}
+                            </td>
+                            <td class="ta-right nowrap">
+                                <button type="button" class="btn-sm btn-secondary check-one" data-token-id="{{ tok['id'] }}">检查</button>
+                                <form method="post" action="/tokens/{{ tok['id'] }}/delete" class="inline-form"
+                                      onsubmit="return confirm('确定删除这个 Token 吗？')">
+                                    <button type="submit" class="btn-sm btn-danger">删除</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty">号池中还没有 Token。</div>
+            {% endif %}
+        </section>
+    </div>
+
+    <aside class="col-side">
+        <section class="card">
+            <div class="card-head">
+                <h2>添加 DeepSeek 账号</h2>
+            </div>
+            <div class="card-body">
+                <p class="hint">输入账号密码，系统调用 DeepSeek 登录接口，成功后只保存返回的 Token，不保存密码。</p>
+                <form method="post" action="/accounts/add" class="stack">
+                    <label class="field">
+                        <span>别名（可选）</span>
+                        <input type="text" name="alias" placeholder="例如：个人">
+                    </label>
+                    <label class="field">
+                        <span>邮箱</span>
+                        <input type="email" name="email" placeholder="you@example.com" required>
+                    </label>
+                    <label class="field">
+                        <span>密码</span>
+                        <input type="password" name="password" placeholder="请输入账号密码" required autocomplete="new-password">
+                    </label>
+                    <button type="submit" class="btn-block">登录并加入号池</button>
+                </form>
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="card-head">
+                <h2>添加账号 Token</h2>
+            </div>
+            <div class="card-body">
+                <details class="guide">
+                    <summary>如何获取 Token？</summary>
+                    <ol>
+                        <li>打开浏览器无痕/隐私窗口</li>
+                        <li>访问 <a href="https://chat.deepseek.com" target="_blank" rel="noopener">chat.deepseek.com</a> 并登录</li>
+                        <li>打开开发者工具（F12）→ Console，粘贴并回车：</li>
+                    </ol>
+                    <code class="block">JSON.parse(localStorage.getItem("userToken")).value</code>
+                    <ol start="4">
+                        <li>复制返回的 Token，去掉首尾引号</li>
+                        <li>关闭无痕窗口以保留登录状态</li>
+                    </ol>
+                </details>
+                <div class="warning">如果在浏览器中退出 DeepSeek，该 Token 将立即失效。</div>
+                <form method="post" action="/tokens/add" class="stack">
+                    <label class="field">
+                        <span>别名（可选）</span>
+                        <input type="text" name="alias" placeholder="例如：个人、工作">
+                    </label>
+                    <label class="field">
+                        <span>Token</span>
+                        <input type="text" name="auth_token" placeholder="粘贴 Token（不要带引号）">
+                    </label>
+                    <button type="submit" class="btn-block">添加 Token</button>
+                </form>
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="card-head">
+                <h2>接口信息</h2>
+            </div>
+            <div class="card-body">
+                <dl class="kv">
+                    <dt>OpenAI 兼容</dt>
+                    <dd><code>http://localhost:4000/v1</code></dd>
+                    <dt>Anthropic 兼容</dt>
+                    <dd><code>http://localhost:4000</code></dd>
+                    <dt>默认模型</dt>
+                    <dd><code>v4.1flash</code></dd>
+                </dl>
+            </div>
+        </section>
+    </aside>
+</div>
+
 <script>
 const message = document.getElementById('check-message');
 const checkButtons = document.querySelectorAll('.check-one');

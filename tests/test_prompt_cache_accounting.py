@@ -6,6 +6,7 @@ conversation every turn: the previous turn's prompt is a prefix of this turn's.
 These tests pin the pairing that makes that reconstruction correct — the
 `next_sig` recorded at the end of turn N must equal the `sig` of turn N+1.
 """
+
 import os
 import sys
 
@@ -23,7 +24,10 @@ MODEL = "deepseek-v4.1-flash"
 
 
 def _msgs(*turns):
-    return [{"role": "user" if i % 2 == 0 else "assistant", "content": t} for i, t in enumerate(turns)]
+    return [
+        {"role": "user" if i % 2 == 0 else "assistant", "content": t}
+        for i, t in enumerate(turns)
+    ]
 
 
 def test_first_turn_has_no_cache_to_read():

@@ -16,7 +16,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import functions
 
-
 CHALLENGE = {
     "challenge": "ch-1",
     "salt": "salt-1",
@@ -59,7 +58,9 @@ def test_pool_hit_skips_network_entirely():
         orig_challenge = functions.create_challange_pow
         functions.create_challange_pow = boom
         try:
-            header = await functions.solve_create_pow("/api/v0/chat/completion", "tok-1")
+            header = await functions.solve_create_pow(
+                "/api/v0/chat/completion", "tok-1"
+            )
         finally:
             functions.create_challange_pow = orig_challenge
         return header, expected
@@ -193,7 +194,9 @@ def test_miss_schedules_prefetch_that_fills_the_pool():
             pending = [t for t in functions._pow_prefetch_tasks if not t.done()]
             if pending:
                 await asyncio.gather(*pending)
-            second = await functions.solve_create_pow("/api/v0/chat/completion", "tok-1")
+            second = await functions.solve_create_pow(
+                "/api/v0/chat/completion", "tok-1"
+            )
             return first, second, challenge_calls
         finally:
             functions.create_challange_pow = orig_challenge
@@ -246,7 +249,10 @@ def test_expire_at_units_are_normalized():
     """expire_at 按量级判断秒/毫秒，异常值退回 None。"""
     now = time.time()
     assert functions._pow_expire_epoch({"expire_at": int(now) + 60}) == int(now) + 60
-    assert functions._pow_expire_epoch({"expire_at": (int(now) + 60) * 1000}) == int(now) + 60
+    assert (
+        functions._pow_expire_epoch({"expire_at": (int(now) + 60) * 1000})
+        == int(now) + 60
+    )
     assert functions._pow_expire_epoch({"expire_at": 0}) is None
     assert functions._pow_expire_epoch({"expire_at": None}) is None
     assert functions._pow_expire_epoch({}) is None
@@ -257,9 +263,16 @@ def test_store_respects_expire_at_over_ttl():
 
     async def scenario():
         _reset_pool()
-        soon = {"challenge": "c", "salt": "s", "signature": "sig", "expire_at": int(time.time()) + 3}
+        soon = {
+            "challenge": "c",
+            "salt": "s",
+            "signature": "sig",
+            "expire_at": int(time.time()) + 3,
+        }
         functions._pow_pool_store("/api/v0/chat/completion", "tok-1", "header", soon)
-        _header, usable_until = functions._POW_POOL[("/api/v0/chat/completion", "tok-1")]
+        _header, usable_until = functions._POW_POOL[
+            ("/api/v0/chat/completion", "tok-1")
+        ]
         return usable_until - time.time()
 
     remaining = asyncio.run(scenario())
@@ -276,7 +289,9 @@ def test_pool_is_bounded():
         functions._POW_POOL_MAX = 3
         try:
             for i in range(6):
-                functions._pow_pool_store("/api/v0/chat/completion", f"tok-{i}", "header", CHALLENGE)
+                functions._pow_pool_store(
+                    "/api/v0/chat/completion", f"tok-{i}", "header", CHALLENGE
+                )
             return len(functions._POW_POOL)
         finally:
             functions._POW_POOL_MAX = orig_max

@@ -1,17 +1,23 @@
 {% extends "base.html" %}
-{% block title %}登录 - DeeperSeeker{% endblock %}
-{% block content %}
-<h1>管理后台登录</h1>
-{% if error %}
-<p class="error">{{ error }}</p>
-{% endif %}
-<form method="post" action="/login">
-    <div class="form-row">
-        <input type="text" name="username" placeholder="用户名" required style="width:300px;">
+{% block title %}登录 · DeeperSeeker{% endblock %}
+{% block layout %}
+<main class="auth">
+    <div class="auth-card">
+        <div class="auth-brand"><span class="brand-mark">DS</span></div>
+        <h1>管理后台登录</h1>
+        <p class="auth-sub">登录后即可管理 Token 号池与账号</p>
+        {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+        <form method="post" action="/login" class="auth-form">
+            <label class="field">
+                <span>用户名</span>
+                <input type="text" name="username" placeholder="请输入用户名" required autofocus autocomplete="username">
+            </label>
+            <label class="field">
+                <span>密码</span>
+                <input type="password" name="password" placeholder="请输入密码" required autocomplete="current-password">
+            </label>
+            <button type="submit" class="btn-block">登录</button>
+        </form>
     </div>
-    <div class="form-row">
-        <input type="password" name="password" placeholder="密码" required style="width:300px;">
-    </div>
-    <button type="submit">登录</button>
-</form>
+</main>
 {% endblock %}

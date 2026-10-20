@@ -1,6 +1,8 @@
 aws_cookies_deepseek.json
 __pycache__/
 deeperseeker.db
+# harvested DeepSeek device ID (per-host, must never be committed)
+deepseek_device_id
 *.db.bak
 .venv/
 .omo/
@@ -11,15 +13,16 @@ deeperseeker.db
 .pytest_cache/
 *.egg-info/
 .dsh-drop/
-
+.dsh-vision-router/
 # local debug artifacts
 _tps_denom.mjs
 _tps_denom_out.txt
-_copy.zstd
 *.zstd
-DISM
-sfc
-...
-
 # local database
 *.db
+# B9: generated API key and SQLite WAL/SHM sidecars
+api_key.txt
+deeperseeker.db-wal
+deeperseeker.db-shm
+.python-version
+.ruff_cache

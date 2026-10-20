@@ -1,0 +1,404 @@
+{% extends "base.html" %}
+{% block title %}使用统计 · DeeperSeeker{% endblock %}
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1>使用统计</h1>
+        <p class="page-sub">按天展示 Token 用量趋势、活跃热力图、缓存命中率曲线，以及按模型 / 服务商的用量拆分。</p>
+    </div>
+    <div class="range-tabs">
+        {% for key, label in range_labels %}
+        <a class="range-tab {% if range_preset == key %}active{% endif %}" href="/stats?range={{ key }}">{{ label }}</a>
+        {% endfor %}
+        <a class="range-tab {% if range_preset == 'custom' %}active{% endif %}" href="/stats?range=custom&amp;from={{ stats.from }}&amp;to={{ stats.to }}">自定义</a>
+        <a class="range-tab" href="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}">刷新</a>
+    </div>
+</div>
+
+<form class="range-custom" method="get" action="/stats">
+    <input type="hidden" name="range" value="custom">
+    <label>自定义区间</label>
+    <input type="date" name="from" value="{{ stats.from }}">
+    <span class="muted">至</span>
+    <input type="date" name="to" value="{{ stats.to }}">
+    <button type="submit" class="btn-sm btn-secondary">查询</button>
+</form>
+
+<p class="range-summary">{{ stats.from }} ~ {{ stats.to }} · 活跃 {{ stats.active_days }} 天 · 共 {{ "{:,}".format(stats.requests) }} 次请求</p>
+
+<section class="stat-grid">
+    <div class="stat-card">
+        <div class="stat-label">Tokens 用量</div>
+        <div class="stat-value">{{ "{:,}".format(stats.tokens) }}</div>
+        <div class="stat-sub">输入 {{ "{:,}".format(stats.input) }} · 输出 {{ "{:,}".format(stats.output) }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">预估费用</div>
+        <div class="stat-value">¥{{ "%.4f"|format(stats.cost) }}</div>
+        <div class="stat-sub">高峰 ¥{{ "%.4f"|format(stats.cost_peak) }} · 空闲 ¥{{ "%.4f"|format(stats.cost_off_peak) }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">请求数量</div>
+        <div class="stat-value">{{ "{:,}".format(stats.requests) }}</div>
+        <div class="stat-sub">缓存写 {{ "{:,}".format(stats.cache_write) }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">平均缓存命中率</div>
+        <div class="stat-value">{{ "%.1f%%"|format(stats.cache_hit_rate * 100) }}</div>
+        <div class="stat-sub">命中 {{ "{:,}".format(stats.cache_hit) }} · 未命中 {{ "{:,}".format(stats.cache_miss) }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">最常用模型</div>
+        <div class="stat-value stat-value-sm">{{ stats.top_model or '—' }}</div>
+        {% if stats.second_model %}<div class="stat-sub stat-sub-line">其次 {{ stats.second_model }}</div>{% endif %}
+    </div>
+</section>
+
+<section class="card">
+    <div class="card-head">
+        <h2>活跃热力图 <span class="badge">{{ heatmap.active_days }} 天</span></h2>
+        <div class="heatLegend">
+            <span class="muted">较少</span>
+            <span class="heatCell heatLevel0"></span>
+            <span class="heatCell heatLevel1"></span>
+            <span class="heatCell heatLevel2"></span>
+            <span class="heatCell heatLevel3"></span>
+            <span class="heatCell heatLevel4"></span>
+            <span class="heatCell heatLevel5"></span>
+            <span class="muted">较多</span>
+        </div>
+    </div>
+    <div class="card-body">
+        {% if heatmap.weeks %}
+        <div class="heatWrap">
+            <div class="heatGrid">
+                {% for week in heatmap.weeks %}
+                    {% for cell in week %}
+                    <span class="heatCell heatLevel{{ cell.level }}" title="{{ cell.day }} · {{ '{:,}'.format(cell.tokens) }} Token"></span>
+                    {% endfor %}
+                {% endfor %}
+            </div>
+        </div>
+        <p class="heatNote muted">区间内单日峰值 {{ "{:,}".format(heatmap.peak) }} Token，色阶按峰值分 5 档。</p>
+        {% else %}
+        <div class="empty">该区间内还没有采样数据。</div>
+        {% endif %}
+    </div>
+</section>
+
+<section class="card">
+    <div class="card-head">
+        <h2>每小时消费</h2>
+        <span class="pill">{{ '逐小时' if chart.granularity == 'hour' else '逐日' }}</span>
+    </div>
+    <div class="card-note">
+        <p>合计 ¥{{ "%.4f"|format(stats.cost) }}，其中高峰时段 ¥{{ "%.4f"|format(stats.cost_peak) }}。高峰为工作日 09:00-12:00、14:00-18:00（北京时间），单价是空闲时段的 2 倍。</p>
+        <p>Token 按小时采样、逐小时计价后求和；超过 30 天的区间自动折算为按天展示。</p>
+    </div>
+    <div class="card-body">
+        {% if chart.labels %}
+        <div class="chart-box"><canvas id="cost-chart"></canvas></div>
+        {% else %}
+        <div class="empty">该区间内还没有采样数据。</div>
+        {% endif %}
+    </div>
+</section>
+
+<section class="card">
+    <div class="card-head">
+        <h2>缓存命中率</h2>
+        <span class="pill">{{ "%.1f%%"|format(stats.cache_hit_rate * 100) }}</span>
+    </div>
+    <div class="card-body">
+        {% if chart.labels %}
+        <div class="chart-box chart-box-sm"><canvas id="hit-chart"></canvas></div>
+        {% else %}
+        <div class="empty">该区间内还没有采样数据。</div>
+        {% endif %}
+    </div>
+</section>
+
+<section class="card">
+    <div class="card-head">
+        <h2>按模型 <span class="badge">{{ stats.models|length }}</span></h2>
+    </div>
+    {% if stats.models %}
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>模型</th>
+                    <th class="ta-right">Token</th>
+                    <th class="ta-right">请求</th>
+                    <th class="ta-right">缓存命中率</th>
+                    <th class="ta-right">成本</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for e in stats.models %}
+                <tr>
+                    <td class="mono">{{ e.label }}</td>
+                    <td class="ta-right">{{ "{:,}".format(e.tokens) }}</td>
+                    <td class="ta-right">{{ "{:,}".format(e.requests) }}</td>
+                    <td class="ta-right">{% set d = e.cache_hit + e.cache_miss %}{{ "%.1f%%"|format(e.cache_hit / d * 100) if d else '—' }}</td>
+                    <td class="ta-right mono">¥{{ "%.4f"|format(e.cost) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty">暂无数据。</div>
+    {% endif %}
+</section>
+
+<section class="card">
+    <div class="card-head">
+        <h2>按服务商 <span class="badge">{{ stats.providers|length }}</span></h2>
+    </div>
+    {% if stats.providers %}
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>服务商</th>
+                    <th>覆盖模型</th>
+                    <th class="ta-right">Token</th>
+                    <th class="ta-right">请求</th>
+                    <th class="ta-right">成本</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for e in stats.providers %}
+                <tr>
+                    <td class="mono">{{ e.label }}</td>
+                    <td class="muted">{{ e.models|join(', ') }}</td>
+                    <td class="ta-right">{{ "{:,}".format(e.tokens) }}</td>
+                    <td class="ta-right">{{ "{:,}".format(e.requests) }}</td>
+                    <td class="ta-right mono">¥{{ "%.4f"|format(e.cost) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty">暂无数据。</div>
+    {% endif %}
+</section>
+
+<section class="card">
+    <div class="card-head">
+        <h2>按号池 Token <span class="badge">{{ stats.pool|length }}</span></h2>
+    </div>
+    {% if stats.pool %}
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>成员</th>
+                    <th class="ta-right">Token</th>
+                    <th class="ta-right">请求</th>
+                    <th class="ta-right">缓存命中率</th>
+                    <th class="ta-right">成本</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for e in stats.pool %}
+                <tr>
+                    <td>{{ e.label }}</td>
+                    <td class="ta-right">{{ "{:,}".format(e.tokens) }}</td>
+                    <td class="ta-right">{{ "{:,}".format(e.requests) }}</td>
+                    <td class="ta-right">{% set d = e.cache_hit + e.cache_miss %}{{ "%.1f%%"|format(e.cache_hit / d * 100) if d else '—' }}</td>
+                    <td class="ta-right mono">¥{{ "%.4f"|format(e.cost) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty">暂无数据。</div>
+    {% endif %}
+</section>
+
+<section class="card">
+    <div class="card-head">
+        <h2>按 API Key <span class="badge">{{ stats["keys"]|length }}</span></h2>
+    </div>
+    <div class="card-note">
+        <p>密钥只保留头尾用于辨识，完整值不会显示在页面上。</p>
+    </div>
+    {% if stats["keys"] %}
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>密钥</th>
+                    <th class="ta-right">Token</th>
+                    <th class="ta-right">请求</th>
+                    <th class="ta-right">缓存命中率</th>
+                    <th class="ta-right">成本</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for e in stats["keys"] %}
+                <tr>
+                    <td class="mono">{{ e.label }}</td>
+                    <td class="ta-right">{{ "{:,}".format(e.tokens) }}</td>
+                    <td class="ta-right">{{ "{:,}".format(e.requests) }}</td>
+                    <td class="ta-right">{% set d = e.cache_hit + e.cache_miss %}{{ "%.1f%%"|format(e.cache_hit / d * 100) if d else '—' }}</td>
+                    <td class="ta-right mono">¥{{ "%.4f"|format(e.cost) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty">暂无数据。</div>
+    {% endif %}
+</section>
+
+{% if chart.labels %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+    var data = {{ chart|tojson }};
+    if (typeof Chart === "undefined") { return; }
+    var money = function (v) { return "¥" + Number(v).toFixed(4); };
+    var count = function (v) { return Number(v).toLocaleString(); };
+
+    var costEl = document.getElementById("cost-chart");
+    if (costEl) {
+        new Chart(costEl, {
+            data: {
+                labels: data.labels,
+                datasets: [
+                    {
+                        type: "bar",
+                        label: "高峰成本 (¥)",
+                        data: data.cost_peak,
+                        backgroundColor: "rgba(220, 38, 38, 0.62)",
+                        stack: "cost",
+                        yAxisID: "y"
+                    },
+                    {
+                        type: "bar",
+                        label: "空闲成本 (¥)",
+                        data: data.cost_off_peak,
+                        backgroundColor: "rgba(79, 70, 229, 0.5)",
+                        borderRadius: 4,
+                        stack: "cost",
+                        yAxisID: "y"
+                    },
+                    {
+                        type: "line",
+                        label: "输入 Token",
+                        data: data.input,
+                        borderColor: "#0891b2",
+                        backgroundColor: "rgba(8, 145, 178, 0.1)",
+                        tension: 0.3,
+                        pointRadius: 2,
+                        yAxisID: "y1"
+                    },
+                    {
+                        type: "line",
+                        label: "输出 Token",
+                        data: data.output,
+                        borderColor: "#059669",
+                        backgroundColor: "rgba(5, 150, 105, 0.1)",
+                        tension: 0.3,
+                        pointRadius: 2,
+                        yAxisID: "y1"
+                    },
+                    {
+                        type: "line",
+                        label: "缓存读 Token",
+                        data: data.cache_read,
+                        borderColor: "#c2740a",
+                        backgroundColor: "rgba(194, 116, 10, 0.1)",
+                        tension: 0.3,
+                        pointRadius: 2,
+                        yAxisID: "y1"
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: "index", intersect: false },
+                scales: {
+                    x: { stacked: true },
+                    y: {
+                        stacked: true,
+                        beginAtZero: true,
+                        position: "left",
+                        title: { display: true, text: "成本 (¥)" },
+                        ticks: { callback: function (v) { return "¥" + v; } }
+                    },
+                    y1: {
+                        beginAtZero: true,
+                        position: "right",
+                        grid: { drawOnChartArea: false },
+                        title: { display: true, text: "Token" },
+                        ticks: { callback: count }
+                    }
+                },
+                plugins: {
+                    legend: { labels: { boxWidth: 12, boxHeight: 12 } },
+                    tooltip: {
+                        callbacks: {
+                            label: function (ctx) {
+                                return ctx.dataset.label + ": " + (
+                                    ctx.dataset.yAxisID === "y1" ? count(ctx.parsed.y) : money(ctx.parsed.y)
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    var hitEl = document.getElementById("hit-chart");
+    if (hitEl) {
+        new Chart(hitEl, {
+            type: "line",
+            data: {
+                labels: data.labels,
+                datasets: [{
+                    label: "缓存命中率",
+                    data: data.cache_hit_rate,
+                    borderColor: "#4f46e5",
+                    backgroundColor: "rgba(79, 70, 229, 0.12)",
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: "index", intersect: false },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 1,
+                        ticks: { callback: function (v) { return Math.round(v * 100) + "%"; } }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function (ctx) {
+                                return "命中率: " + (Number(ctx.parsed.y) * 100).toFixed(1) + "%";
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+})();
+</script>
+{% endif %}
+{% endblock %}

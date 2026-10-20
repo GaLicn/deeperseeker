@@ -4,12 +4,12 @@ dual-endpoint failover).
 pytest-compatible; also runnable directly:
     python tests/test_stage0_rails.py
 """
+
 import asyncio
 import contextlib
 import json
 import os
 import sys
-import unittest.mock as mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -17,18 +17,24 @@ import aiohttp
 
 import middleware
 from middleware import (
-    RecovererMiddleware,
     RealIPMiddleware,
+    RecovererMiddleware,
     RequestIDMiddleware,
     get_real_ip,
     parse_trusted_proxies,
 )
 
-
 # ------------------------------------------------------------------------------
 # Helpers
 
-def make_scope(client_ip="203.0.113.7", xff=None, request_id=None, path="/v1/chat/completions", method="POST"):
+
+def make_scope(
+    client_ip="203.0.113.7",
+    xff=None,
+    request_id=None,
+    path="/v1/chat/completions",
+    method="POST",
+):
     headers = []
     if xff is not None:
         headers.append((b"x-forwarded-for", xff.encode("latin-1")))
@@ -58,7 +64,13 @@ async def run_asgi(app, scope):
 
 def ok_response(app_or_none=None):
     async def inner(scope, receive, send):
-        await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [(b"content-type", b"application/json")],
+            }
+        )
         await send({"type": "http.response.body", "body": b"{}"})
 
     return inner
@@ -82,6 +94,7 @@ class _RestoreTrusted:
 
 # ------------------------------------------------------------------------------
 # Stage 0.2 — TRUSTED_PROXIES parsing + fail-closed XFF resolution
+
 
 def test_parse_trusted_proxies_valid_and_invalid():
     nets = parse_trusted_proxies("10.0.0.0/8, 172.16.0.0/12, 127.0.0.1/32")
@@ -143,6 +156,7 @@ def test_real_ip_trusted_peer_without_xff():
 # ------------------------------------------------------------------------------
 # Stage 0.1 — RealIP / RequestID / Recoverer middlewares (pure ASGI)
 
+
 def test_realip_middleware_sets_state():
     async def scenario():
         with _RestoreTrusted(parse_trusted_proxies("10.0.0.0/8")):
@@ -151,7 +165,9 @@ def test_realip_middleware_sets_state():
             async def inner(scope, receive, send):
                 captured["ip"] = scope["state"]["real_ip"]
 
-            await RealIPMiddleware(inner)(make_scope("10.0.0.2", "203.0.113.9"), None, None)
+            await RealIPMiddleware(inner)(
+                make_scope("10.0.0.2", "203.0.113.9"), None, None
+            )
             return captured["ip"]
 
     assert asyncio.run(scenario()) == "203.0.113.9"
@@ -170,7 +186,9 @@ def test_requestid_middleware_generates_and_echoes_header():
 
 def test_requestid_middleware_honors_sane_inbound_id():
     async def scenario():
-        sent = await run_asgi(RequestIDMiddleware(ok_response()), make_scope(request_id="trace-abc.123"))
+        sent = await run_asgi(
+            RequestIDMiddleware(ok_response()), make_scope(request_id="trace-abc.123")
+        )
         return [v for k, v in sent[0]["headers"] if k == b"x-request-id"][0].decode()
 
     assert asyncio.run(scenario()) == "trace-abc.123"
@@ -179,7 +197,9 @@ def test_requestid_middleware_honors_sane_inbound_id():
 def test_requestid_middleware_rejects_malicious_inbound_id():
     async def scenario():
         evil = "bad\r\nX-Injected: 1"
-        sent = await run_asgi(RequestIDMiddleware(ok_response()), make_scope(request_id=evil))
+        sent = await run_asgi(
+            RequestIDMiddleware(ok_response()), make_scope(request_id=evil)
+        )
         rid = [v for k, v in sent[0]["headers"] if k == b"x-request-id"][0].decode()
         return rid
 
@@ -242,6 +262,7 @@ def test_recoverer_passthrough_on_success():
 # ------------------------------------------------------------------------------
 # Stage 0.3 — Per-chat locks
 
+
 def test_chat_lock_same_key_same_lock_different_key_different_lock():
     import app as app_module
 
@@ -266,7 +287,9 @@ def test_chat_lock_serializes_same_chat_requests():
 
         task = asyncio.create_task(worker())
         await asyncio.sleep(0.05)
-        assert progress == [], "second same-chat request must wait while the lock is held"
+        assert progress == [], (
+            "second same-chat request must wait while the lock is held"
+        )
         lock.release()
         await task
         assert progress == ["entered"]
@@ -391,6 +414,7 @@ def test_owned_chat_lock_release_is_idempotent_and_scoped():
 # PR #26 review (High), plus post-review addendum — the lock registry must
 # preserve same-chat identity under pressure AND stay bounded.
 
+
 def test_chat_lock_over_cap_preserves_same_chat_identity_across_pressure_drop():
     """The addendum's core scenario. With the registry full and every entry
     held, chat-x registers over cap. If pressure then DROPS while that
@@ -410,7 +434,9 @@ def test_chat_lock_over_cap_preserves_same_chat_identity_across_pressure_drop():
         await a.acquire()
         held[1].release()  # pressure drops while chat-x's request is still in flight
         b = app_module._chat_lock("chat-x")
-        assert b is a, "same chat must resolve to the same lock object across a pressure drop"
+        assert b is a, (
+            "same chat must resolve to the same lock object across a pressure drop"
+        )
         entered = []
 
         async def second_holder():
@@ -419,7 +445,9 @@ def test_chat_lock_over_cap_preserves_same_chat_identity_across_pressure_drop():
 
         task = asyncio.create_task(second_holder())
         await asyncio.sleep(0.05)
-        assert entered == [], "no second concurrent holder for the same chat, even over cap"
+        assert entered == [], (
+            "no second concurrent holder for the same chat, even over cap"
+        )
         a.release()
         await task
         assert entered == ["in"]
@@ -445,11 +473,15 @@ def test_chat_lock_over_cap_depth_is_bounded_and_stable():
             lk = app_module._chat_lock(f"burst-{i}")  # over cap: everything held
             await lk.acquire()
             burst.append(lk)
-        assert len(app_module._chat_locks) == 6, "depth == registry at cap + the four in-flight registrations"
+        assert len(app_module._chat_locks) == 6, (
+            "depth == registry at cap + the four in-flight registrations"
+        )
         held[1].release()  # one recycle slot opens
         for i in range(10):
             app_module._chat_lock(f"churn-{i}")  # distinct unheld chats
-        assert len(app_module._chat_locks) == 6, "churn must recycle slots, not grow the registry"
+        assert len(app_module._chat_locks) == 6, (
+            "churn must recycle slots, not grow the registry"
+        )
         for lk in burst:
             lk.release()
         held[0].release()  # held-1 was already released to open the recycle slot
@@ -495,9 +527,13 @@ def test_sig_lock_registry_over_cap_registration_keeps_identity():
         ]
         for lk in held:
             await lk.acquire()
-        lock = app_module._take_lock("sig", app_module._sig_locks, "sig-new", 2)  # over cap
+        lock = app_module._take_lock(
+            "sig", app_module._sig_locks, "sig-new", 2
+        )  # over cap
         again = app_module._take_lock("sig", app_module._sig_locks, "sig-new", 2)  # hit
-        assert lock is again, "same signature must resolve to the same lock object over cap"
+        assert lock is again, (
+            "same signature must resolve to the same lock object over cap"
+        )
         assert len(app_module._sig_locks) == 3
         for lk in held:
             lk.release()
@@ -564,6 +600,7 @@ def test_chat_lock_touch_refreshes_lru_position():
 # ------------------------------------------------------------------------------
 # Stage 0.4 — Dual-endpoint failover
 
+
 class FakeResp:
     def __init__(self, status, text="err", json_data=None):
         self.status = status
@@ -610,7 +647,9 @@ async def call_failover(session_stub, bases):
     orig = functions.UPSTREAM_BASES
     functions.UPSTREAM_BASES = list(bases)
     try:
-        return await functions.post_with_failover("/api/v0/x", headers={}, session=session_stub)
+        return await functions.post_with_failover(
+            "/api/v0/x", headers={}, session=session_stub
+        )
     finally:
         functions.UPSTREAM_BASES = orig
 
@@ -649,15 +688,19 @@ def test_failover_releases_failed_5xx_response_before_failing_over():
     s = FakeSession([bad, good])
     resp = asyncio.run(call_failover(s, ["http://primary", "http://backup"]))
     assert resp.status == 200
-    assert bad.released, "failed 5xx response must be handed back to the connection pool"
+    assert bad.released, (
+        "failed 5xx response must be handed back to the connection pool"
+    )
     assert not good.released, "the success response remains owned by the caller"
 
 
 def test_failover_last_connection_error_raises():
-    s = FakeSession([
-        aiohttp.ClientConnectionError("down-1"),
-        aiohttp.ClientConnectionError("down-2"),
-    ])
+    s = FakeSession(
+        [
+            aiohttp.ClientConnectionError("down-1"),
+            aiohttp.ClientConnectionError("down-2"),
+        ]
+    )
     raised = False
     try:
         asyncio.run(call_failover(s, ["http://primary", "http://backup"]))
@@ -693,6 +736,7 @@ def test_failover_single_endpoint_mode_unchanged():
 # directly. These smoke tests drive the REAL function bodies against a stub
 # session.
 
+
 @contextlib.contextmanager
 def stub_upstream(session, bases=("http://primary",)):
     import functions
@@ -716,9 +760,16 @@ def test_create_new_chat_awaits_failover_and_returns_session_id():
     import functions
 
     async def scenario():
-        s = FakeSession([
-            FakeResp(200, json_data={"data": {"biz_data": {"chat_session": {"id": "chat-new-1"}}}}),
-        ])
+        s = FakeSession(
+            [
+                FakeResp(
+                    200,
+                    json_data={
+                        "data": {"biz_data": {"chat_session": {"id": "chat-new-1"}}}
+                    },
+                ),
+            ]
+        )
         with stub_upstream(s):
             return await functions.create_new_chat("tok-1")
 
@@ -728,14 +779,26 @@ def test_create_new_chat_awaits_failover_and_returns_session_id():
 def test_create_challange_pow_awaits_failover_and_returns_challenge():
     import functions
 
-    challenge = {"challenge": "c", "salt": "s", "signature": "sig", "expire_at": 1, "difficulty": 0}
+    challenge = {
+        "challenge": "c",
+        "salt": "s",
+        "signature": "sig",
+        "expire_at": 1,
+        "difficulty": 0,
+    }
 
     async def scenario():
-        s = FakeSession([
-            FakeResp(200, json_data={"data": {"biz_data": {"challenge": challenge}}}),
-        ])
+        s = FakeSession(
+            [
+                FakeResp(
+                    200, json_data={"data": {"biz_data": {"challenge": challenge}}}
+                ),
+            ]
+        )
         with stub_upstream(s):
-            return await functions.create_challange_pow("/api/v0/chat/completion", "tok-1")
+            return await functions.create_challange_pow(
+                "/api/v0/chat/completion", "tok-1"
+            )
 
     assert asyncio.run(scenario()) == challenge
 
@@ -744,12 +807,24 @@ def test_upload_file_awaits_failover_and_yields_file_id():
     import functions
 
     async def scenario():
-        s = FakeSession([
-            FakeResp(200, json_data={"data": {"biz_data": {
-                "id": "file-9", "status": "SUCCESS", "updated_at": 1726000000,
-                "file_size": 3, "file_name": "a.txt",
-            }}}),
-        ])
+        s = FakeSession(
+            [
+                FakeResp(
+                    200,
+                    json_data={
+                        "data": {
+                            "biz_data": {
+                                "id": "file-9",
+                                "status": "SUCCESS",
+                                "updated_at": 1726000000,
+                                "file_size": 3,
+                                "file_name": "a.txt",
+                            }
+                        }
+                    },
+                ),
+            ]
+        )
         orig_pow = functions.solve_create_pow
 
         async def fake_pow(target_path, auth_token):
@@ -758,7 +833,12 @@ def test_upload_file_awaits_failover_and_yields_file_id():
         functions.solve_create_pow = fake_pow
         try:
             with stub_upstream(s):
-                events = [ev async for ev in functions.upload_file(b"abc", "a.txt", "text/plain", "tok-1")]
+                events = [
+                    ev
+                    async for ev in functions.upload_file(
+                        b"abc", "a.txt", "text/plain", "tok-1"
+                    )
+                ]
         finally:
             functions.solve_create_pow = orig_pow
         return events
@@ -770,6 +850,7 @@ def test_upload_file_awaits_failover_and_yields_file_id():
 
 # ------------------------------------------------------------------------------
 # PR #26 review (Blocker 2) — retry path must not self-deadlock on the chat lock
+
 
 def test_handle_chat_retry_surrenders_lock_before_recursing():
     """The retry re-resolves the SAME upstream chat (the delete before the
@@ -783,7 +864,11 @@ def test_handle_chat_retry_surrenders_lock_before_recursing():
     async def scenario():
         app_module._chat_locks.clear()
         sig = "sig-retry-deadlock"
-        session = {"token_id": "t1", "session_id": "chat-retry-1", "parent_message_id": 4}
+        session = {
+            "token_id": "t1",
+            "session_id": "chat-retry-1",
+            "parent_message_id": 4,
+        }
         calls = {"send": 0}
 
         async def fake_sig(messages, model, scope=""):
@@ -795,7 +880,16 @@ def test_handle_chat_retry_surrenders_lock_before_recursing():
         def fake_get_token(tid):
             return {"token": "tok", "status": "ACTIVE"}
 
-        def fake_send(chat_id, auth_token, message, parent, thinking=False, search=False, file_ids_=None):
+        def fake_send(
+            chat_id,
+            auth_token,
+            message,
+            parent,
+            thinking=False,
+            search=False,
+            file_ids_=None,
+            search_sink=None,
+        ):
             # send_message is an async-generator function: called un-awaited,
             # its body starts at the first __anext__ (inside _preflight_stream)
             calls["send"] += 1
@@ -833,20 +927,27 @@ def test_handle_chat_retry_surrenders_lock_before_recursing():
             ("delete_sessions_for_chat", fake_delete),
             ("save_session", fake_save),
             ("parse_tools", lambda t: ([], t)),
-            ("format_response", lambda text, model, messages, tools=None, **kwargs: "FORMATTED"),
+            (
+                "format_response",
+                lambda text, model, messages, tools=None, **kwargs: "FORMATTED",
+            ),
         ]
         saved = [(name, getattr(app_module, name)) for name, _ in patches]
         for name, fn in patches:
             setattr(app_module, name, fn)
         try:
             result = await asyncio.wait_for(
-                app_module.handle_chat([{"role": "user", "content": "hi"}], "test-model"),
+                app_module.handle_chat(
+                    [{"role": "user", "content": "hi"}], "test-model"
+                ),
                 timeout=10,
             )
         finally:
             for name, fn in saved:
                 setattr(app_module, name, fn)
-        assert calls["send"] == 2, "the retry must actually run a second upstream attempt"
+        assert calls["send"] == 2, (
+            "the retry must actually run a second upstream attempt"
+        )
         lock = app_module._chat_lock("chat-retry-1")
         assert not lock.locked(), "no acquisition may survive the request"
         return result
@@ -854,7 +955,9 @@ def test_handle_chat_retry_surrenders_lock_before_recursing():
     try:
         assert asyncio.run(scenario()) == "FORMATTED"
     except asyncio.TimeoutError:
-        raise AssertionError("handle_chat retry deadlocked on the per-chat lock (Blocker 2)")
+        raise AssertionError(
+            "handle_chat retry deadlocked on the per-chat lock (Blocker 2)"
+        ) from None
     finally:
         import app as app_module
 
@@ -862,7 +965,9 @@ def test_handle_chat_retry_surrenders_lock_before_recursing():
 
 
 def _main():
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
+    fns = [
+        v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)
+    ]
     failed = 0
     for fn in fns:
         try:
